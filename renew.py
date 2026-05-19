@@ -1,4 +1,6 @@
-import os, sys, time
+import os
+import sys
+import time
 from seleniumbase import SB
 from selenium.webdriver.common.by import By
 import requests
@@ -36,9 +38,12 @@ def send_tg_with_screenshot(text, screenshot_path):
     # 发送带图片的消息
     try:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/sendPhoto"
-        files = {"photo": open(screenshot_path, "rb")}
-        data = {"chat_id": TG_CHAT_ID, "caption": f"🤖 G4F 自动续期\n{text}"}
-        r = requests.post(url, files=files, data=data, timeout=15)
+        # 使用 with 语句确保图片发送后文件流正常关闭，防止文件被系统占用
+        with open(screenshot_path, "rb") as f:
+            files = {"photo": f}
+            data = {"chat_id": TG_CHAT_ID, "caption": f"🤖 G4F 自动续期\n{text}"}
+            r = requests.post(url, files=files, data=data, timeout=15)
+        
         print(f"✅ 带截图通知发送结果：状态码 {r.status_code}")
         if r.status_code != 200:
             print(f"❌ 错误详情：{r.text}")
@@ -51,34 +56,54 @@ if __name__ == "__main__":
 
     # 先删除旧截图
     if os.path.exists(SCREENSHOT_PATH):
-        os.remove(SCREENSHOT_PATH)
+        try:
+            os.remove(SCREENSHOT_PATH)
+        except Exception as e:
+            print(f"⚠️ 无法删除旧截图: {e}")
 
     try:
         with SB(headless=True, window_size="1920,1080") as sb:
             sb.open(TARGET_URL)
-            sb.sleep(15)
+            sb.sleep(15)  # 等待页面加载及 Cloudflare 盾（如有）
 
-            # 找续期按钮
+            # 🛠️ 优化后的续期按钮定位逻辑
+            print("🔍 正在查找续期按钮...")
             renew_button = None
-            all_buttons = sb.find_elements(By.XPATH, "//button")
-            for btn in all_buttons:
-                try:
-                    if btn.is_displayed() and "add" in btn.text.lower():
-                        renew_button = btn
-                        print(f"✅ 找到续期按钮：{btn.text.strip()}")
-                        break
-                except:
-                    pass
+            
+            # 方法 1：优先使用 XPath 强匹配（包含 "+ ADD 3 HOURS" 文本的按钮，忽略大小写和空格）
+            try:
+                xpath_selector = "//button[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'ADD 3 HOURS')]"
+                btn = sb.find_element(By.XPATH, xpath_selector)
+                if btn.is_displayed():
+                    renew_button = btn
+                    print(f"✅ 通过 XPath 精准找到续期按钮: {btn.text.strip()}")
+            except:
+                pass
 
+            # 方法 2：如果 XPath 没找到，降级回滚到遍历检查（兼容模糊匹配）
+            if not renew_button:
+                all_buttons = sb.find_elements(By.XPATH, "//button")
+                for btn in all_buttons:
+                    try:
+                        btn_text = btn.text.strip().upper()
+                        if btn.is_displayed() and ("ADD 3 HOURS" in btn_text or "ADD" in btn_text):
+                            renew_button = btn
+                            print(f"✅ 通过遍历找到续期按钮：{btn.text.strip()}")
+                            break
+                    except:
+                        pass
+
+            # 如果依然没找到按钮
             if not renew_button:
                 sb.save_screenshot(SCREENSHOT_PATH)
-                send_tg_with_screenshot("❌ 续期失败：未找到续期按钮", SCREENSHOT_PATH)
+                send_tg_with_screenshot("❌ 续期失败：未找到指定的 [+ ADD 3 HOURS] 按钮", SCREENSHOT_PATH)
                 sys.exit(1)
 
             # 点击续期
             sb.driver.execute_script("arguments[0].scrollIntoView(true);", renew_button)
             sb.sleep(2)
             sb.driver.execute_script("arguments[0].click();", renew_button)
+            print("👆 已点击续期按钮，等待页面刷新...")
             sb.sleep(15)
 
             # 续期完成后截图
