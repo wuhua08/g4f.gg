@@ -1,4 +1,4 @@
-name: gaming4free renew (WARP + Python)
+name: gaming4free续期
 
 on:
   workflow_dispatch:
