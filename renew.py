@@ -12,9 +12,9 @@ TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "")
 SCREENSHOT_PATH = "renew_result.png"
 MAX_RETRIES = 3
-# ✅ 点击后最多等30秒让验证弹窗出现（足够覆盖所有延迟）
+# 点击后最多等30秒让验证弹窗出现
 MAX_WAIT_FOR_CAPTCHA = 30
-# 验证弹窗选择器（你的弹窗就是这个）
+# 验证弹窗选择器
 CAPTCHA_DIALOG = "div[role='dialog']"
 # 复选框相对于验证弹窗左上角的偏移（1920x1080已校准）
 CHECKBOX_OFFSET_X = 32
@@ -49,19 +49,16 @@ def wait_and_handle_turnstile(sb):
     print("🔍 点击完成，开始循环检测Cloudflare验证弹窗...")
     start_time = time.time()
     
-    # 循环检测，直到弹窗出现或超时
     while time.time() - start_time < MAX_WAIT_FOR_CAPTCHA:
         elapsed = int(time.time() - start_time)
         print(f"  已等待 {elapsed}/{MAX_WAIT_FOR_CAPTCHA} 秒...")
         
         if sb.is_element_visible(CAPTCHA_DIALOG):
             print("✅ 检测到验证弹窗！正在处理...")
-            # 再等2秒让验证框完全渲染和加载脚本
-            time.sleep(2)
+            time.sleep(2)  # 等待验证框完全渲染
             
-            # 三重验证方案，按优先级尝试
+            # 三重验证方案
             try:
-                # 方案1：SeleniumBase最新官方solve_captcha()（最推荐）
                 print("ℹ️ 尝试方案1：官方solve_captcha()")
                 sb.solve_captcha()
                 time.sleep(4)
@@ -72,7 +69,6 @@ def wait_and_handle_turnstile(sb):
                 print(f"❌ 方案1失败：{e}")
             
             try:
-                # 方案2：指定父容器的uc_gui_click_captcha()
                 print("ℹ️ 尝试方案2：指定父容器点击")
                 sb.uc_gui_click_captcha(CAPTCHA_DIALOG, reconnect_time=3)
                 time.sleep(4)
@@ -83,7 +79,6 @@ def wait_and_handle_turnstile(sb):
                 print(f"❌ 方案2失败：{e}")
             
             try:
-                # 方案3：终极坐标点击（无视所有DOM问题）
                 print("ℹ️ 尝试方案3：CDP坐标点击")
                 dialog_rect = sb.cdp.get_gui_element_rect(CAPTCHA_DIALOG)
                 checkbox_x = dialog_rect["x"] + CHECKBOX_OFFSET_X
@@ -96,11 +91,10 @@ def wait_and_handle_turnstile(sb):
             except Exception as e:
                 print(f"❌ 方案3失败：{e}")
             
-            # 所有方案都失败
             print("❌ 所有验证方案均失败")
             return False
         
-        # 没检测到弹窗，检查是否已经续期成功
+        # 检查是否已经续期成功
         try:
             sb.get_text("//div[contains(text(), 'SERVER TIME REMAINING')]")
             print("ℹ️ 未触发验证，直接续期成功")
@@ -108,7 +102,7 @@ def wait_and_handle_turnstile(sb):
         except:
             pass
         
-        time.sleep(1)  # 每秒检测一次
+        time.sleep(1)
     
     print(f"⚠️ 超时：{MAX_WAIT_FOR_CAPTCHA}秒内未检测到验证弹窗")
     return False
@@ -133,33 +127,57 @@ def run_renew_once():
             undetectable=True,
             uc_cdp_events=True
         ) as sb:
-            # 用uc_open_with_reconnect打开页面，断开驱动避免被检测
             sb.driver.uc_open_with_reconnect(TARGET_URL, reconnect_time=6)
-            sb.sleep(12)
+            sb.sleep(15)  # 延长页面加载时间
             
-            print("🔍 正在查找续期按钮...")
-            selectors = [
-                "//button[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'ADD 3 HOURS')]",
-                "//button[contains(text(), 'ADD')]"
+            print("🔍 正在查找并等待ADD 3 HOURS按钮...")
+            # ✅ 核心修复：多重按钮选择器+强制等待可见
+            button_selectors = [
+                "button:contains('ADD 3 HOURS')",  # SeleniumBase官方CSS选择器（最推荐）
+                "//button[contains(text(), 'ADD 3 HOURS')]",
+                "//button[contains(., 'ADD 3 HOURS')]",
+                "button.bg-green-600",  # 绿色按钮的class选择器
+                "button[class*='green']"
             ]
             
             clicked = False
-            for selector in selectors:
+            for selector in button_selectors:
                 try:
-                    # 模拟真人鼠标移动点击
-                    sb.cdp.gui_click_element(selector, timeframe=0.2)
-                    print(f"✅ 成功点击ADD 3 HOURS按钮")
+                    # ✅ 先等待按钮可见，再点击（自动重试15秒）
+                    sb.wait_for_element_visible(selector, timeout=15)
+                    sb.click(selector)
+                    print(f"✅ 成功点击ADD 3 HOURS按钮 (选择器: {selector})")
                     clicked = True
                     break
-                except Exception:
+                except Exception as e:
+                    print(f"ℹ️ 选择器 {selector} 失败: {e}")
                     continue
+            
+            if not clicked:
+                # ✅ 最后备用：JS强制点击
+                print("ℹ️ 尝试JS强制点击按钮...")
+                try:
+                    sb.execute_script("""
+                        const buttons = document.querySelectorAll('button');
+                        for (const btn of buttons) {
+                            if (btn.textContent.includes('ADD 3 HOURS')) {
+                                btn.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                    print("✅ JS强制点击成功！")
+                    clicked = True
+                except Exception as e:
+                    print(f"❌ JS点击也失败: {e}")
             
             if not clicked:
                 sb.save_screenshot(SCREENSHOT_PATH)
                 send_tg_with_screenshot("❌ 续期失败：未能找到并点击续期按钮", SCREENSHOT_PATH)
                 return False
             
-            # ✅ 核心：点击后循环等待并处理验证
+            # 处理验证
             verification_success = wait_and_handle_turnstile(sb)
             if not verification_success:
                 sb.save_screenshot(SCREENSHOT_PATH)
@@ -193,7 +211,7 @@ def run_renew_once():
 
 # 主程序
 if __name__ == "__main__":
-    print("\n===== 🚀 g4f.gg自动续期（点击触发验证专属版） =====")
+    print("\n===== 🚀 g4f.gg自动续期（按钮定位修复版） =====")
     print(f"⚙️ 配置：验证弹窗最长等待{MAX_WAIT_FOR_CAPTCHA}秒，最多重试{MAX_RETRIES}次")
     
     for attempt in range(MAX_RETRIES + 1):
