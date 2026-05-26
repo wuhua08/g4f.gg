@@ -41,7 +41,7 @@ def send_tg_with_screenshot(text, screenshot_path):
 
 # 主程序
 if __name__ == "__main__":
-    print("\n===== 🚀 g4f.gg 自动续期 (特定顺序优化版) =====")
+    print("\n===== 🚀 g4f.gg 自动续期 (Iframe 穿透破盾版) =====")
 
     if os.path.exists(SCREENSHOT_PATH):
         try:
@@ -50,12 +50,12 @@ if __name__ == "__main__":
             pass
 
     try:
-        # 启用 UC 防检测模式
-        with SB(uc=True, headless=True, window_size="1920,1080") as sb:
+        # 💡 优化 1：使用隐身能力更强的 headless2=True 配合 uc=True
+        with SB(uc=True, headless2=True, window_size="1920,1080") as sb:
             
             print(f"🌐 正在打开目标网址: {TARGET_URL}")
             sb.uc_open_with_reconnect(TARGET_URL, 4)
-            sb.sleep(8)  # 等待初始页面加载
+            sb.sleep(8)  # 等待初始页面渲染
 
             print("🔍 步骤 1：正在寻找并点击续期按钮...")
             selectors = [
@@ -85,25 +85,63 @@ if __name__ == "__main__":
                 send_tg_with_screenshot("❌ 续期失败：未能在初始页面中定位到续期按钮", SCREENSHOT_PATH)
                 sys.exit(1)
 
-            # 💡 核心修改：点击按钮后，按照你的提示，等待验证码弹窗显现
-            print("⏳ 步骤 2：已点击续期按钮，等待 Cloudflare 验证码弹窗浮现...")
-            sb.sleep(8)  # 给验证码动画和加载留出 8 秒时间
+            # 💡 优化 2：遵照触发逻辑，点击按钮后强制等待验证码弹窗完全浮现
+            print("⏳ 步骤 2：已点击续期按钮，等待 Cloudflare 验证码弹窗完全加载...")
+            sb.sleep(7)  
 
-            # 💡 核心修改：此时再执行破盾，去点击“验证您是真人”
-            print("🛡️ 步骤 3：正在检测并点击 Cloudflare Turnstile 真人验证框...")
+            # 💡 优化 3：【核心】Iframe 穿透打击技术
+            print("🛡️ 步骤 3：开始攻克 Cloudflare Turnstile 真人验证...")
+            cf_solved = False
+            
+            # 定义 Cloudflare 常见的特有 iframe 选择器
+            iframe_selectors = [
+                "iframe[src*='cloudflare']", 
+                "iframe[src*='turnstile']", 
+                "iframe[title*='verification']"
+            ]
+            
             try:
-                # 尝试使用高级 GUI 验证码点击
-                sb.uc_gui_click_captcha()
-                print("🔘 已触发自动点击验证框，等待验证通过及页面响应...")
-                sb.sleep(12)  # 留出足够时间让 Cloudflare 放行并完成续期后台通信
-            except Exception as ce:
-                print(f"⚠️ 自动点击验证码时出现提示（若已成功可忽略）: {ce}")
-                sb.sleep(5)
+                for iframe_sel in iframe_selectors:
+                    if sb.is_element_present(iframe_sel):
+                        print(f"🎯 检测到验证码容器 {iframe_sel}，正在切入内部...")
+                        sb.switch_to_frame(iframe_sel)
+                        sb.sleep(1)
+                        
+                        # 验证码内部核心复选框的常见标签选择器
+                        inner_targets = ["input[type='checkbox']", "#challenge-stage", ".ctp-checkbox-label", "span.mark", "body"]
+                        for target in inner_targets:
+                            try:
+                                sb.click(target, timeout=3)
+                                print(f"⚡ 成功穿透并点击了验证码组件: {target}")
+                                cf_solved = True
+                                break
+                            except:
+                                continue
+                        
+                        sb.switch_to_default_content()  # 切回主页面
+                        if cf_solved:
+                            break
+            except Exception as ie:
+                print(f"⚠️ Iframe 穿透尝试中发生异常: {ie}")
+                sb.switch_to_default_content()
 
-            # 续期和验证完成后截图存证
+            # 💡 优化 4：如果穿透法没点中，使用官方内置的 GUI 自动化算法做最后的兜底
+            if not cf_solved:
+                print("🔄 穿透法未确认成功，启动官方内置 GUI 智能识别点击...")
+                try:
+                    sb.uc_gui_click_captcha()
+                    print("🔘 已触发 GUI 备用点击指令...")
+                    cf_solved = True
+                except Exception as ce:
+                    print(f"❌ 备用点击也失败: {ce}")
+
+            print("👆 验证操作已提交，等待 Cloudflare 放行及后台刷新...")
+            sb.sleep(15)  # 给验证通过和服务器数据同步留出充裕时间
+
+            # 最终结果截图
             sb.save_screenshot(SCREENSHOT_PATH)
 
-            print("📊 步骤 4：正在获取续期后的剩余时间...")
+            print("📊 步骤 4：正在获取续期后的服务器剩余时间...")
             remaining = "无法获取"
             try:
                 remaining = sb.get_text("//div[contains(., 'SERVER TIME REMAINING')]/following-sibling::div[1]")
@@ -113,7 +151,7 @@ if __name__ == "__main__":
                 except:
                     pass
 
-            success_msg = f"✅ 续期流程执行完毕！\n结果参考截图。\n提取到的剩余时间：{remaining}"
+            success_msg = f"✅ 续期流程执行完毕！\n请查看最新通知截图。\n系统提取到的剩余时间：{remaining}"
             print(f"\n🎉 {success_msg}")
             send_tg_with_screenshot(success_msg, SCREENSHOT_PATH)
 
