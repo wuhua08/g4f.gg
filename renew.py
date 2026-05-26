@@ -40,7 +40,7 @@ def send_tg_with_screenshot(text, screenshot_path):
 
 # 主程序
 if __name__ == "__main__":
-    print("\n===== 🚀 g4f.gg 自动续期 (GitHub Actions 优化版) =====")
+    print("\n===== 🚀 g4f.gg 自动续期 (Actions 动作触发优化版) =====")
 
     if os.path.exists(SCREENSHOT_PATH):
         try:
@@ -49,36 +49,14 @@ if __name__ == "__main__":
             pass
 
     try:
-        # 💡 针对 GitHub Actions 的关键配置：启用 uc 反检测，并用 xvfb 虚拟桌面代替纯 headless
+        # 启用反检测模式与虚拟桌面
         with SB(uc=True, xvfb=True, window_size="1920,1080") as sb:
             
             print("🌐 正在通过反检测模式打开页面...")
-            # 瞬间断开控制链路，绕过 Cloudflare 首次扫描
             sb.uc_open_with_disconnect(TARGET_URL)
-            sb.sleep(10)  
-
-            # 🛡️ 绕过 Cloudflare Turnstile 验证码的兜底逻辑
-            print("🛡️ 检查是否存在 Turnstile 人机验证...")
-            try:
-                cf_iframe = "iframe[src*='challenges.cloudflare.com']"
-                if sb.is_element_visible(cf_iframe):
-                    print("⚠️ 探测到验证码弹窗，尝试进行模拟人类点击...")
-                    # 切入验证码 iframe 内部
-                    sb.switch_to_frame(cf_iframe)
-                    # 模拟真人点击复选框区域
-                    sb.uc_click("#challenge-stage")
-                    # 切回主页面并等待
-                    sb.switch_to_default_content()
-                    print("⏳ 已点击验证，等待 8 秒...")
-                    sb.sleep(8)
-                else:
-                    print("✅ 未发现显式验证码，可能已无感通过。")
-            except Exception as cf_err:
-                print(f"ℹ️ 处理验证码时跳过或异常（可能已自动通过）: {cf_err}")
-                sb.switch_to_default_content()
+            sb.sleep(10)  # 等待页面首屏加载
 
             print("🔍 正在执行续期点击...")
-            
             selectors = [
                 "//button[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'ADD 3 HOURS')]",
                 "//button[contains(text(), 'ADD')]"
@@ -87,9 +65,9 @@ if __name__ == "__main__":
             clicked = False
             for selector in selectors:
                 try:
-                    # 使用 uc_click 避免点击瞬间触发自动化特征检测
+                    # 使用 uc_click 模拟真人点击
                     sb.uc_click(selector, timeout=8)
-                    print(f"✅ 成功点击按钮 (选择器: {selector})")
+                    print(f"✅ 成功点击续期按钮 (选择器: {selector})")
                     clicked = True
                     break
                 except Exception:
@@ -100,8 +78,32 @@ if __name__ == "__main__":
                 send_tg_with_screenshot("❌ 续期失败：未能在规定时间内定位并点击按钮", SCREENSHOT_PATH)
                 sys.exit(1)
 
-            print("👆 已点击续期按钮，等待页面刷新...")
-            sb.sleep(10)
+            # 💡 关键改动：点击后停留 3 秒，等待 Cloudflare 弹窗加载出来
+            print("👆 已点击续期按钮，等待 3 秒观察是否触发人机验证...")
+            sb.sleep(3)
+
+            # 🛡️ 绕过 Cloudflare Turnstile 验证码（移至点击之后）
+            print("🛡️ 检查是否存在 Turnstile 人机验证...")
+            try:
+                cf_iframe = "iframe[src*='challenges.cloudflare.com']"
+                if sb.is_element_visible(cf_iframe):
+                    print("⚠️ ⚡ 探测到点击后弹出了验证码！正在尝试模拟人类点击破解...")
+                    # 1. 切入验证码 iframe 内部
+                    sb.switch_to_frame(cf_iframe)
+                    # 2. 模拟真人点击复选框区域
+                    sb.uc_click("#challenge-stage")
+                    # 3. 切回主页面
+                    sb.switch_to_default_content()
+                    print("⏳ 已成功点击验证码，等待 10 秒让其通过并完成刷新...")
+                    sb.sleep(10)
+                else:
+                    print("✅ 未发现显式验证码，可能已无感通过或直接成功。")
+            except Exception as cf_err:
+                print(f"ℹ️ 处理验证码时出现异常（可能已自动通过）: {cf_err}")
+                sb.switch_to_default_content()
+
+            print("⏳ 正在等待最终页面刷新...")
+            sb.sleep(8)
 
             # 续期完成后截图
             sb.save_screenshot(SCREENSHOT_PATH)
@@ -123,4 +125,7 @@ if __name__ == "__main__":
         if os.path.exists(SCREENSHOT_PATH):
             send_tg_with_screenshot(error_msg, SCREENSHOT_PATH)
         else:
-            send_
+            send_tg_with_screenshot(error_msg, "")
+        sys.exit(1)
+
+    print("\n===== 🛑 脚本执行完成 =====")
