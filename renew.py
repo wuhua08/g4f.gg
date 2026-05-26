@@ -51,7 +51,8 @@ def handle_turnstile_after_click(sb, max_wait=20):
         ]
         
         for selector in turnstile_selectors:
-            if sb.is_element_visible(selector, timeout=1):
+            # ✅ 修复：is_element_visible 不支持 timeout 参数
+            if sb.is_element_visible(selector):
                 print("✅ 检测到 Cloudflare Turnstile，正在自动解决...")
                 try:
                     # 方法1：SeleniumBase 内置专用方法（最推荐）
@@ -59,12 +60,12 @@ def handle_turnstile_after_click(sb, max_wait=20):
                     time.sleep(3)
                     
                     # 方法2：CDP 直接点击（备用，针对 shadow DOM）
-                    if sb.is_element_visible(selector, timeout=2):
+                    if sb.is_element_visible(selector):
                         print("ℹ️ 尝试 CDP 方式点击...")
                         sb.cdp.gui_click_element(f"{selector} div")
                         time.sleep(3)
                     
-                    # 等待验证完成和页面刷新
+                    # 等待验证完成和页面刷新（wait_for_element_not_visible 支持 timeout）
                     sb.wait_for_element_not_visible(selector, timeout=15)
                     print("✅ Cloudflare 验证通过！")
                     return True
@@ -95,7 +96,6 @@ if __name__ == "__main__":
         except:
             pass
     try:
-        # ✅ 修复：将 disable_images 改为 block_images（或直接删除）
         with SB(
             uc=True,                # 隐藏自动化特征
             headless=False,         # UC 模式必须关闭 headless
